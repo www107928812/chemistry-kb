@@ -36,6 +36,17 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 #settings button{margin-top:12px;width:100%;}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;z-index:20;opacity:0;transition:opacity 0.3s;}
 #toast.show{opacity:1;}
+#picker-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:15;justify-content:center;align-items:center;}
+#picker-overlay.show{display:flex;}
+#picker{background:#1e293b;padding:16px;border-radius:12px;width:92%;max-width:420px;max-height:80dvh;display:flex;flex-direction:column;}
+#picker h3{font-size:15px;margin-bottom:8px;}
+#picker input{width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:8px;font-size:13px;margin-bottom:8px;}
+#picker-list{flex:1;overflow-y:auto;max-height:50dvh;}
+#picker-list div{padding:10px 8px;border-bottom:1px solid #1e293b;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+#picker-list div:hover,#picker-list div.sel{background:#2563eb;border-radius:4px;}
+#picker-list div span.badge{font-size:10px;background:#475569;padding:2px 6px;border-radius:3px;flex-shrink:0;margin-left:6px;}
+#picker-actions{display:flex;gap:8px;margin-top:8px;}
+#picker-actions button{flex:1;padding:8px;border-radius:6px;font-size:13px;border:none;}
 .kb-badge{display:inline-block;background:#166534;color:#86efac;font-size:10px;padding:2px 6px;border-radius:4px;margin:2px;}
 .loading{color:#94a3b8;font-size:13px;font-style:italic;}
 </style>
@@ -100,6 +111,18 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
   <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
     数据仅存储在浏览器 localStorage，不会上传到任何服务器。<br>
     <span style="font-size:10px;color:#64748b;">版本: 20260611-fix1 · 自动禁用缓存</span>
+  </div>
+</div>
+</div>
+
+<div id="picker-overlay">
+<div id="picker">
+  <h3>选择归档章节</h3>
+  <input id="picker-search" placeholder="搜索文件名..." oninput="filterPicker()">
+  <div id="picker-list"></div>
+  <div id="picker-actions">
+    <button onclick="closePicker()" style="background:#475569;">取消</button>
+    <button id="picker-confirm" onclick="confirmPicker()" style="background:#3b82f6;" disabled>确定</button>
   </div>
 </div>
 </div>
@@ -278,37 +301,137 @@ async function send(){
 }
 
 // ── 保存到知识库 ──
+let _pickerFiles=[]; let _pickerContent=''; let _pickerSelected=null;
+
 async function saveToKB(content){
   const ghUser=localStorage.getItem('chem_gh-user');
   const ghRepo=localStorage.getItem('chem_gh-repo');
   const ghToken=localStorage.getItem('chem_gh-token');
   if(!ghUser||!ghRepo||!ghToken){toast('请先设置 GitHub 信息');return;}
 
-  // 自动提取 [建议归档: 路径] 标签
-  const match=content.match(/\[建议归档:\s*([^\]]+)\]/);
-  const suggestedPath=match?match[1].trim():null;
+  _pickerContent=content;
 
-  if(suggestedPath){
-    const archiveContent=content.split(/\[建议归档:/)[1]?.replace(/^[^\]]+\]\s*/,'')||content;
-    const ok=confirm('归档到: '+suggestedPath+'\n\n点确定保存，取消放弃');
-    if(!ok) return;
-    await commitToGitHub(suggestedPath, archiveContent, ghUser, ghRepo, ghToken);
-  }else{
-    // 无标签时列出可选路径
-    const paths=[
-      'chemistry/初中化学/九年级上册/第一单元-走进化学世界.md',
-      'chemistry/初中化学/九年级下册/第八单元-金属和金属材料.md',
-      'chemistry/高中化学/必修一/第一章-物质及其变化.md',
-      'chemistry/高中化学/选必1-化学反应原理/第一章-化学反应的热效应.md',
-      'chemistry/高中化学/选必2-物质结构与性质/第一章-原子结构与性质.md',
-      'chemistry/高中化学/选必3-有机化学基础/第一章-有机化合物的结构特点与研究方法.md',
-    ];
-    const sel=prompt('选择文件路径:\n\n'+paths.map((p,i)=>'['+i+'] '+p).join('\n'), '0');
-    if(sel===null) return;
-    const idx=parseInt(sel);
-    if(isNaN(idx)||idx<0||idx>=paths.length){toast('无效选择');return;}
-    await commitToGitHub(paths[idx], content, ghUser, ghRepo, ghToken);
+  // 自动提取 [建议归档: 路径]
+  const match=content.match(/\[建议归档:\s*([^\]]+)\]/);
+  _pickerSelected=match?match[1].trim():null;
+
+  // 拉取文件列表
+  const list=document.getElementById('picker-list');
+  list.innerHTML='<div style="color:#94a3b8;">加载中...</div>';
+  document.getElementById('picker-overlay').classList.add('show');
+  document.getElementById('picker-search').value='';
+  document.getElementById('picker-confirm').disabled=true;
+
+  try{
+    const treeUrl='https://api.github.com/repos/'+ghUser+'/'+ghRepo+'/git/trees/main?recursive=1';
+    const headers=ghToken?{Authorization:'Bearer '+ghToken}:{};
+    const res=await fetch(treeUrl,{headers});
+    if(!res.ok){list.innerHTML='<div>加载失败</div>';return;}
+    const data=await res.json();
+    _pickerFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/')).map(f=>{
+      let cat='';
+      if(f.path.includes('初中化学')) cat='初中';
+      else if(f.path.includes('必修')) cat='必修';
+      else if(f.path.includes('选必1')) cat='选必1';
+      else if(f.path.includes('选必2')) cat='选必2';
+      else if(f.path.includes('选必3')) cat='选必3';
+      else if(f.path.includes('高考')) cat='高考';
+      else if(f.path.includes('中考')) cat='中考';
+      return {path:f.path, cat};
+    });
+    _pickerFiles.sort((a,b)=>a.path.localeCompare(b.path,'zh'));
+    renderPicker();
+  }catch(e){
+    list.innerHTML='<div>网络错误，重试</div>';
   }
+}
+
+function renderPicker(filter=''){
+  const list=document.getElementById('picker-list');
+  list.innerHTML='';
+  const filtered=_pickerFiles.filter(f=>!filter||f.path.includes(filter)||f.cat.includes(filter));
+  if(!filtered.length){list.innerHTML='<div style="color:#94a3b8;padding:16px;">无匹配结果</div>';return;}
+
+  // 三级分组：学段 → 书名 → 章节
+  const tree={};
+  filtered.forEach(f=>{
+    const p=f.path.replace('chemistry/','');
+    const parts=p.split('/');
+    let level1,book,chapter;
+    if(parts[0]==='初中化学'){
+      level1='初中化学';
+      book=parts[1]==='九年级上册'?'九年级上册':'九年级下册';
+      chapter=parts[2].replace('.md','');
+    }else if(parts[0]==='高中化学'){
+      level1='高中化学';
+      book=parts[1];
+      chapter=parts[2].replace('.md','');
+    }else if(parts[0]==='中考专题'){
+      level1='中考专题';book='';chapter=parts[1].replace('.md','');
+    }else if(parts[0]==='高考专题'){
+      level1='高考专题';book='';chapter=parts[1].replace('.md','');
+    }else{level1='其他';book='';chapter=p;}
+    if(!tree[level1]) tree[level1]={};
+    if(!tree[level1][book]) tree[level1][book]=[];
+    tree[level1][book].push({path:f.path, chapter});
+  });
+
+  const L1order=['初中化学','高中化学','中考专题','高考专题','其他'];
+  const L2order={'初中化学':['九年级上册','九年级下册'],'高中化学':['必修一','必修二','选必1-化学反应原理','选必2-物质结构与性质','选必3-有机化学基础']};
+
+  L1order.forEach(l1=>{
+    if(!tree[l1]) return;
+    // 一级：学段标题
+    const d1=document.createElement('div');
+    d1.style.cssText='padding:10px 8px 4px;font-size:12px;color:#fbbf24;font-weight:bold;border-bottom:1px solid #334155;margin-top:6px;';
+    d1.textContent='▸ '+l1;
+    list.appendChild(d1);
+
+    const books=Object.keys(tree[l1]);
+    const order=L2order[l1]||books;
+    order.forEach(bk=>{
+      if(!tree[l1][bk]) return;
+      // 二级：书名
+      const d2=document.createElement('div');
+      d2.style.cssText='padding:6px 8px 2px 12px;font-size:11px;color:#94a3b8;font-weight:bold;';
+      d2.textContent=bk;
+      list.appendChild(d2);
+
+      // 三级：章节文件
+      tree[l1][bk].forEach(f=>{
+        const div=document.createElement('div');
+        div.style.cssText='padding:8px 8px 8px 24px;font-size:13px;cursor:pointer;border-bottom:1px solid #0f172a;';
+        if(_pickerSelected&&f.path===_pickerSelected){div.classList.add('sel');div.style.background='#2563eb';div.style.borderRadius='4px';}
+        div.innerHTML='<span>📄 '+f.chapter+'</span>';
+        div.onclick=()=>{
+          list.querySelectorAll('div').forEach(d=>{d.classList.remove('sel');d.style.background='';});
+          div.classList.add('sel');div.style.background='#2563eb';div.style.borderRadius='4px';
+          _pickerSelected=f.path;
+          document.getElementById('picker-confirm').disabled=false;
+        };
+        list.appendChild(div);
+      });
+    });
+  });
+}
+
+function filterPicker(){
+  const q=document.getElementById('picker-search').value;
+  renderPicker(q);
+}
+
+function closePicker(){
+  document.getElementById('picker-overlay').classList.remove('show');
+}
+
+async function confirmPicker(){
+  if(!_pickerSelected) return;
+  closePicker();
+  const ghUser=localStorage.getItem('chem_gh-user');
+  const ghRepo=localStorage.getItem('chem_gh-repo');
+  const ghToken=localStorage.getItem('chem_gh-token');
+  const archiveContent=_pickerContent.split(/\[建议归档:/)[1]?.replace(/^[^\]]+\]\s*/,'')||_pickerContent;
+  await commitToGitHub(_pickerSelected, archiveContent, ghUser, ghRepo, ghToken);
 }
 
 async function commitToGitHub(fname, content, ghUser, ghRepo, ghToken){
