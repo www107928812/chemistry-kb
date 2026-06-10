@@ -64,7 +64,7 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 <div id="settings">
   <h3 style="margin-bottom:12px;">&#x2699; 设置</h3>
   <label>DeepSeek API Key</label><input id="ds-key" placeholder="sk-...">
-  <label>DeepSeek 模型</label><input id="ds-model" value="deepseek-chat" placeholder="deepseek-chat">
+  <label>DeepSeek 模型</label><input id="ds-model" value="deepseek-v4-plus" placeholder="deepseek-v4-plus">
   <label>GitHub 用户名</label><input id="gh-user" placeholder="your-username">
   <label>GitHub 仓库名</label><input id="gh-repo" placeholder="chemistry-kb">
   <label>GitHub Token <span style="color:#94a3b8;font-size:11px">(需要 repo 权限)</span></label><input id="gh-token" placeholder="ghp_..." type="password">
@@ -225,8 +225,8 @@ async function send(){
   const msg=input.value.trim();
   if(!msg) return;
 
-  const dsKey=localStorage.getItem('chem_ds-key');
-  if(!dsKey){toast('请先设置 DeepSeek API Key');toggleSettings();return;}
+  const apiKey=localStorage.getItem('chem_ds-key');
+  if(!apiKey){toast('请先设置 API Key');toggleSettings();return;}
 
   input.value='';
   addMsg('user',msg);
