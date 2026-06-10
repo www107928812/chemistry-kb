@@ -41,7 +41,10 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 
 <header>
   <h1>&#x2697; 化学知识助手</h1>
-  <button onclick="toggleSettings()">&#x2699; 设置</button>
+  <div style="display:flex;gap:6px;">
+    <button onclick="clearHistory()" style="background:#475569;font-size:11px;">清记录</button>
+    <button onclick="toggleSettings()">&#x2699; 设置</button>
+  </div>
 </header>
 
 <div id="chat">
@@ -102,6 +105,29 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 <script>
 // ── 状态 ──
 let messages = [{role:'system',content:''}];
+
+// ── 聊天记录持久化 ──
+function saveHistory(){
+  const slim=messages.slice(1).map(m=>({role:m.role,content:m.content}));
+  localStorage.setItem('chem_history',JSON.stringify(slim));
+}
+function loadHistory(){
+  try{
+    const raw=localStorage.getItem('chem_history');
+    if(raw){
+      const hist=JSON.parse(raw);
+      hist.forEach(m=>{messages.push(m);addMsg(m.role,m.content);});
+    }
+  }catch(e){}
+}
+function clearHistory(){
+  if(confirm('确定清除所有聊天记录？')){
+    localStorage.removeItem('chem_history');
+    messages=[{role:'system',content:localStorage.getItem('chem_sys-prompt')||''}];
+    document.getElementById('chat').innerHTML='';
+    toast('聊天记录已清除');
+  }
+}
 
 // ── 设置 ──
 function loadSettings(){
@@ -204,6 +230,8 @@ async function send(){
 
   input.value='';
   addMsg('user',msg);
+  messages.push({role:'user',content:msg});
+  saveHistory();
 
   const loading=addMsg('ai','<span class="loading">思考中...</span>');
 
@@ -224,6 +252,8 @@ async function send(){
 
     const data=await resp.json();
     const reply=data.choices[0].message.content;
+    messages.push({role:'assistant',content:reply});
+    saveHistory();
 
     // 更新加载消息
     loading.querySelector('.bubble').innerHTML=renderMarkdown(reply);
@@ -344,6 +374,8 @@ function scrollDown(){
 
 // ── 初始化 ──
 loadSettings();
+loadHistory();
+scrollDown();
 </script>
 </body>
 </html>
