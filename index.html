@@ -108,41 +108,52 @@ function toggleSettings(){
 // ── Toast ──
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
 
-// ── 加载知识库 ──
+// ── 加载知识库（带本地缓存） ──
 async function loadKB(){
   const ghUser=localStorage.getItem('chem_gh-user');
   const ghRepo=localStorage.getItem('chem_gh-repo');
   const ghToken=localStorage.getItem('chem_gh-token');
-  if(!ghUser||!ghRepo) return null;
+  if(!ghUser||!ghRepo) return loadFromLocalCache();
 
+  // 1. 先尝试从 GitHub 拉取
   try{
-    // 获取文件列表
     const treeUrl=`https://api.github.com/repos/${ghUser}/${ghRepo}/git/trees/main?recursive=1`;
     const headers=ghToken?{Authorization:`Bearer ${ghToken}`}:{};
     const res=await fetch(treeUrl,{headers});
-    if(!res.ok) return null;
-    const data=await res.json();
-    const mdFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/'));
+    if(res.ok){
+      const data=await res.json();
+      const mdFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/'));
 
-    // 读取 CLAUDE.md 和目录
-    let kbText='';
-    const toFetch=mdFiles.filter(f=>f.path==='CLAUDE.md'||f.path.startsWith('chemistry/'));
+      let kbText='';
+      const toFetch=mdFiles.filter(f=>f.path==='CLAUDE.md'||f.path.startsWith('chemistry/'));
+      const maxFetch=Math.min(toFetch.length,12);
+      const fetchBatch=toFetch.slice(0,maxFetch);
 
-    // 限制数量，避免超时
-    const maxFetch=Math.min(toFetch.length,8);
-    const fetchBatch=toFetch.slice(0,maxFetch);
+      const contents=await Promise.all(fetchBatch.map(async f=>{
+        const curl=`https://raw.githubusercontent.com/${ghUser}/${ghRepo}/main/${f.path}`;
+        const r=await fetch(curl);
+        return r.ok?r.text():'';
+      }));
 
-    const contents=await Promise.all(fetchBatch.map(async f=>{
-      const curl=`https://raw.githubusercontent.com/${ghUser}/${ghRepo}/main/${f.path}`;
-      const r=await fetch(curl);
-      return r.ok?r.text():'';
-    }));
+      kbText=contents.join('\n\n');
+      // 保存到本地缓存
+      localStorage.setItem('chem_kb_cache',kbText);
+      localStorage.setItem('chem_kb_time',Date.now().toString());
+      return {text:kbText, files:mdFiles.map(f=>f.path), source:'GitHub'};
+    }
+  }catch(e){}
 
-    kbText=contents.join('\n\n');
-    return {text:kbText, files:mdFiles.map(f=>f.path)};
-  }catch(e){
-    return null;
+  // 2. GitHub 不可用，读取本地缓存
+  return loadFromLocalCache();
+}
+
+function loadFromLocalCache(){
+  const cache=localStorage.getItem('chem_kb_cache');
+  const time=localStorage.getItem('chem_kb_time');
+  if(cache){
+    return {text:cache, files:[], source:'本地缓存 ('+(time?new Date(parseInt(time)).toLocaleDateString():'未知')+')'};
   }
+  return null;
 }
 
 // ── 构建消息 ──
@@ -152,7 +163,7 @@ async function buildMessages(userMsg){
   // 尝试加载知识库
   const kb=await loadKB();
   if(kb&&kb.text){
-    base[0].content+='\n\n【知识库内容参考】\n'+kb.text.substring(0,8000);
+    base[0].content+='\n\n【知识库内容参考（来源：'+kb.source+'）】\n'+kb.text.substring(0,10000);
   }
 
   // 添加历史（最近10条）
