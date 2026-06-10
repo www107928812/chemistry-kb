@@ -84,7 +84,9 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 - 给出口诀/记忆方法
 - 高频考点用 ★ 标注
 
-**5. 归档**：回答中提供了知识库没有的新内容时，末尾询问是否需要归档</textarea>
+**5. 归档**：回答中提供了知识库没有的新知识点时，在末尾加上：
+`[建议归档: chemistry/高中化学/选必X/第X章-XXX.md]`
+后面跟一段可直接保存的 Markdown 内容。根据知识点所属学段和章节准确判断路径。初中学段路径用 `chemistry/初中化学/九年级上册/` 或 `九年级下册/`，高中学段用 `chemistry/高中化学/必修一/`、`必修二/`、`选必1-化学反应原理/`、`选必2-物质结构与性质/`、`选必3-有机化学基础/`。</textarea>
   <div style="display:flex;gap:8px;">
     <button onclick="saveSettings()" style="flex:1;">保存</button>
     <button onclick="toggleSettings()" style="flex:1;background:#475569;">取消</button>
@@ -248,46 +250,59 @@ async function saveToKB(content){
   const ghToken=localStorage.getItem('chem_gh-token');
   if(!ghUser||!ghRepo||!ghToken){toast('请先设置 GitHub 信息');return;}
 
-  // 简单询问文件名
-  const fname=prompt('保存到哪个文件？(例: chemistry/高中化学/选必3-有机化学基础/第二章-烃.md)');
-  if(!fname) return;
+  // 自动提取 [建议归档: 路径] 标签
+  const match=content.match(/\[建议归档:\s*([^\]]+)\]/);
+  const suggestedPath=match?match[1].trim():null;
 
+  if(suggestedPath){
+    const archiveContent=content.split(/\[建议归档:/)[1]?.replace(/^[^\]]+\]\s*/,'')||content;
+    const ok=confirm('归档到: '+suggestedPath+'\n\n点确定保存，取消放弃');
+    if(!ok) return;
+    await commitToGitHub(suggestedPath, archiveContent, ghUser, ghRepo, ghToken);
+  }else{
+    // 无标签时列出可选路径
+    const paths=[
+      'chemistry/初中化学/九年级上册/第一单元-走进化学世界.md',
+      'chemistry/初中化学/九年级下册/第八单元-金属和金属材料.md',
+      'chemistry/高中化学/必修一/第一章-物质及其变化.md',
+      'chemistry/高中化学/选必1-化学反应原理/第一章-化学反应的热效应.md',
+      'chemistry/高中化学/选必2-物质结构与性质/第一章-原子结构与性质.md',
+      'chemistry/高中化学/选必3-有机化学基础/第一章-有机化合物的结构特点与研究方法.md',
+    ];
+    const sel=prompt('选择文件路径:\n\n'+paths.map((p,i)=>'['+i+'] '+p).join('\n'), '0');
+    if(sel===null) return;
+    const idx=parseInt(sel);
+    if(isNaN(idx)||idx<0||idx>=paths.length){toast('无效选择');return;}
+    await commitToGitHub(paths[idx], content, ghUser, ghRepo, ghToken);
+  }
+}
+
+async function commitToGitHub(fname, content, ghUser, ghRepo, ghToken){
   try{
-    // 获取当前文件内容（如果存在）
     let sha=null;
-    const getUrl=`https://api.github.com/repos/${ghUser}/${ghRepo}/contents/${fname}`;
-    const getRes=await fetch(getUrl,{headers:{Authorization:`Bearer ${ghToken}`}});
-    if(getRes.ok){
-      const d=await getRes.json();
-      sha=d.sha;
-    }
+    const getUrl='https://api.github.com/repos/'+ghUser+'/'+ghRepo+'/contents/'+fname;
+    const getRes=await fetch(getUrl,{headers:{Authorization:'Bearer '+ghToken}});
+    if(getRes.ok){const d=await getRes.json();sha=d.sha;}
 
-    // 构建新内容
     const now=new Date().toISOString().slice(0,10);
-    let newContent=content;
-    if(!newContent.includes('> **归档时间**')){
-      newContent+='\n\n> **归档时间**：'+now+' | 移动端补充';
-    }
+    let nc=content;
+    if(!nc.includes('> **归档时间**')) nc+='\n\n> **归档时间**：'+now+' | 移动端补充';
 
-    // 提交
     const body={
-      message:'移动端补充: '+fname.split('/').pop(),
-      content:btoa(unescape(encodeURIComponent(newContent))),
+      message:'移动端补充: '+fname.split('/').pop().replace('.md',''),
+      content:btoa(unescape(encodeURIComponent(nc))),
       branch:'main'
     };
     if(sha) body.sha=sha;
 
     const putRes=await fetch(getUrl,{
       method:'PUT',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${ghToken}`},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ghToken},
       body:JSON.stringify(body)
     });
 
-    if(putRes.ok){toast('已保存到 GitHub!');}
-    else{toast('保存失败: '+putRes.status);}
-  }catch(e){
-    toast('错误: '+e.message);
-  }
+    putRes.ok?toast('已归档!'):toast('失败: '+putRes.status+' '+putRes.statusText);
+  }catch(e){toast('错误: '+e.message);}
 }
 
 // ── 简单 Markdown 渲染 ──
