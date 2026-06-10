@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>化学知识助手</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;height:100dvh;display:flex;flex-direction:column;}
+header{background:#1e293b;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;}
+header h1{font-size:18px;}
+header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:14px;}
+#chat{flex:1;overflow-y:auto;padding:12px;}
+.msg{margin-bottom:12px;max-width:90%;}
+.msg.user{margin-left:auto;text-align:right;}
+.msg.user .bubble{background:#2563eb;display:inline-block;}
+.msg.ai .bubble{background:#1e293b;border:1px solid #334155;display:inline-block;}
+.bubble{padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.6;word-break:break-word;text-align:left;}
+.bubble p{margin:4px 0;}
+.bubble h3,.bubble h4{margin:8px 0 4px;}
+.bubble table{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px;}
+.bubble td,.bubble th{border:1px solid #475569;padding:4px 8px;}
+.bubble code,.bubble pre{background:#0f172a;padding:2px 6px;border-radius:4px;font-size:13px;}
+#input-area{background:#1e293b;padding:10px;display:flex;gap:8px;border-top:1px solid #334155;}
+#input-area input{flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:8px;padding:10px;font-size:15px;}
+#input-area button{background:#3b82f6;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-size:14px;}
+#settings-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10;justify-content:center;align-items:center;}
+#settings-overlay.show{display:flex;}
+#settings{background:#1e293b;padding:20px;border-radius:12px;width:90%;max-width:400px;}
+#settings label{display:block;font-size:13px;margin:10px 0 4px;color:#94a3b8;}
+#settings input,#settings textarea{width:100%;background:#0f172a;color:#e2e8f0;border:1px solid#475569;border-radius:6px;padding:8px;font-size:14px;}
+#settings textarea{height:80px;resize:vertical;}
+#settings button{margin-top:12px;width:100%;}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;z-index:20;opacity:0;transition:opacity 0.3s;}
+#toast.show{opacity:1;}
+.kb-badge{display:inline-block;background:#166534;color:#86efac;font-size:10px;padding:2px 6px;border-radius:4px;margin:2px;}
+.loading{color:#94a3b8;font-size:13px;font-style:italic;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#x2697; 化学知识助手</h1>
+  <button onclick="toggleSettings()">&#x2699; 设置</button>
+</header>
+
+<div id="chat">
+  <div class="msg ai"><div class="bubble">
+    你好！我是化学教学助手。<br><br>
+    知识库：初高中全学段 40 个知识点文件。<br>
+    请先在<span style="color:#fbbf24">设置</span>中填入 DeepSeek API Key 和 GitHub 仓库信息。
+  </div></div>
+</div>
+
+<div id="input-area">
+  <input id="prompt" placeholder="输入化学问题..." onkeydown="if(event.key==='Enter')send()">
+  <button onclick="send()">发送</button>
+</div>
+
+<div id="settings-overlay">
+<div id="settings">
+  <h3 style="margin-bottom:12px;">&#x2699; 设置</h3>
+  <label>DeepSeek API Key</label><input id="ds-key" placeholder="sk-...">
+  <label>DeepSeek 模型</label><input id="ds-model" value="deepseek-chat" placeholder="deepseek-chat">
+  <label>GitHub 用户名</label><input id="gh-user" placeholder="your-username">
+  <label>GitHub 仓库名</label><input id="gh-repo" placeholder="chemistry-kb">
+  <label>GitHub Token <span style="color:#94a3b8;font-size:11px">(需要 repo 权限)</span></label><input id="gh-token" placeholder="ghp_..." type="password">
+  <label>System Prompt <span style="color:#94a3b8;font-size:11px">(可自定义)</span></label>
+  <textarea id="sys-prompt">你是一名初高中化学教培机构老师。你的知识库存储在 GitHub 仓库中。优先以知识库内容回答，如果没有相关内容则基于你的化学知识回答。回答时：区分初中/高中层次，标注常见学生误区，给出记忆口诀或教学建议。如果提供了新的知识点，主动询问是否需要归档到知识库的对应章节。</textarea>
+  <div style="display:flex;gap:8px;">
+    <button onclick="saveSettings()" style="flex:1;">保存</button>
+    <button onclick="toggleSettings()" style="flex:1;background:#475569;">取消</button>
+  </div>
+  <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
+    数据仅存储在浏览器 localStorage，不会上传到任何服务器。
+  </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── 状态 ──
+let messages = [{role:'system',content:''}];
+
+// ── 设置 ──
+function loadSettings(){
+  ['ds-key','ds-model','gh-user','gh-repo','gh-token','sys-prompt'].forEach(id=>{
+    const v=localStorage.getItem('chem_'+id);
+    if(v) document.getElementById(id).value=v;
+  });
+  if(!localStorage.getItem('chem_ds-model')) document.getElementById('ds-model').value='deepseek-chat';
+  const sp=localStorage.getItem('chem_sys-prompt');
+  if(sp) messages[0].content=sp;
+}
+function saveSettings(){
+  ['ds-key','ds-model','gh-user','gh-repo','gh-token','sys-prompt'].forEach(id=>{
+    localStorage.setItem('chem_'+id, document.getElementById(id).value);
+  });
+  messages[0].content=document.getElementById('sys-prompt').value;
+  toggleSettings();
+  toast('设置已保存');
+}
+function toggleSettings(){
+  document.getElementById('settings-overlay').classList.toggle('show');
+}
+
+// ── Toast ──
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
+
+// ── 加载知识库 ──
+async function loadKB(){
+  const ghUser=localStorage.getItem('chem_gh-user');
+  const ghRepo=localStorage.getItem('chem_gh-repo');
+  const ghToken=localStorage.getItem('chem_gh-token');
+  if(!ghUser||!ghRepo) return null;
+
+  try{
+    // 获取文件列表
+    const treeUrl=`https://api.github.com/repos/${ghUser}/${ghRepo}/git/trees/main?recursive=1`;
+    const headers=ghToken?{Authorization:`Bearer ${ghToken}`}:{};
+    const res=await fetch(treeUrl,{headers});
+    if(!res.ok) return null;
+    const data=await res.json();
+    const mdFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/'));
+
+    // 读取 CLAUDE.md 和目录
+    let kbText='';
+    const toFetch=mdFiles.filter(f=>f.path==='CLAUDE.md'||f.path.startsWith('chemistry/'));
+
+    // 限制数量，避免超时
+    const maxFetch=Math.min(toFetch.length,8);
+    const fetchBatch=toFetch.slice(0,maxFetch);
+
+    const contents=await Promise.all(fetchBatch.map(async f=>{
+      const curl=`https://raw.githubusercontent.com/${ghUser}/${ghRepo}/main/${f.path}`;
+      const r=await fetch(curl);
+      return r.ok?r.text():'';
+    }));
+
+    kbText=contents.join('\n\n');
+    return {text:kbText, files:mdFiles.map(f=>f.path)};
+  }catch(e){
+    return null;
+  }
+}
+
+// ── 构建消息 ──
+async function buildMessages(userMsg){
+  const base=[{role:'system',content:localStorage.getItem('chem_sys-prompt')||messages[0].content}];
+
+  // 尝试加载知识库
+  const kb=await loadKB();
+  if(kb&&kb.text){
+    base[0].content+='\n\n【知识库内容参考】\n'+kb.text.substring(0,8000);
+  }
+
+  // 添加历史（最近10条）
+  const recent=messages.slice(1).slice(-10);
+  base.push(...recent);
+  base.push({role:'user',content:userMsg});
+  return base;
+}
+
+// ── 发送消息 ──
+async function send(){
+  const input=document.getElementById('prompt');
+  const msg=input.value.trim();
+  if(!msg) return;
+
+  const dsKey=localStorage.getItem('chem_ds-key');
+  if(!dsKey){toast('请先设置 DeepSeek API Key');toggleSettings();return;}
+
+  input.value='';
+  addMsg('user',msg);
+
+  const loading=addMsg('ai','<span class="loading">思考中...</span>');
+
+  try{
+    const apiMessages=await buildMessages(msg);
+    const dsModel=localStorage.getItem('chem_ds-model')||'deepseek-chat';
+
+    const resp=await fetch('https://api.deepseek.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${dsKey}`},
+      body:JSON.stringify({model:dsModel,messages:apiMessages,max_tokens:2048,temperature:0.7})
+    });
+
+    if(!resp.ok){
+      const err=await resp.text();
+      throw new Error(`API 错误 (${resp.status}): ${err}`);
+    }
+
+    const data=await resp.json();
+    const reply=data.choices[0].message.content;
+
+    // 更新加载消息
+    loading.querySelector('.bubble').innerHTML=renderMarkdown(reply);
+    messages.push({role:'assistant',content:reply});
+
+    // 添加保存按钮
+    const saveBtn=document.createElement('button');
+    saveBtn.textContent='保存到知识库';
+    saveBtn.style.cssText='margin-top:6px;font-size:11px;background:#166534;color:#86efac;border:none;padding:4px 10px;border-radius:4px;';
+    saveBtn.onclick=()=>saveToKB(reply);
+    loading.querySelector('.bubble').appendChild(saveBtn);
+
+  }catch(e){
+    loading.querySelector('.bubble').innerHTML='<span style="color:#f87171">错误: '+e.message+'</span>';
+  }
+
+  scrollDown();
+}
+
+// ── 保存到知识库 ──
+async function saveToKB(content){
+  const ghUser=localStorage.getItem('chem_gh-user');
+  const ghRepo=localStorage.getItem('chem_gh-repo');
+  const ghToken=localStorage.getItem('chem_gh-token');
+  if(!ghUser||!ghRepo||!ghToken){toast('请先设置 GitHub 信息');return;}
+
+  // 简单询问文件名
+  const fname=prompt('保存到哪个文件？(例: chemistry/高中化学/选必3-有机化学基础/第二章-烃.md)');
+  if(!fname) return;
+
+  try{
+    // 获取当前文件内容（如果存在）
+    let sha=null;
+    const getUrl=`https://api.github.com/repos/${ghUser}/${ghRepo}/contents/${fname}`;
+    const getRes=await fetch(getUrl,{headers:{Authorization:`Bearer ${ghToken}`}});
+    if(getRes.ok){
+      const d=await getRes.json();
+      sha=d.sha;
+    }
+
+    // 构建新内容
+    const now=new Date().toISOString().slice(0,10);
+    let newContent=content;
+    if(!newContent.includes('> **归档时间**')){
+      newContent+='\n\n> **归档时间**：'+now+' | 移动端补充';
+    }
+
+    // 提交
+    const body={
+      message:'移动端补充: '+fname.split('/').pop(),
+      content:btoa(unescape(encodeURIComponent(newContent))),
+      branch:'main'
+    };
+    if(sha) body.sha=sha;
+
+    const putRes=await fetch(getUrl,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${ghToken}`},
+      body:JSON.stringify(body)
+    });
+
+    if(putRes.ok){toast('已保存到 GitHub!');}
+    else{toast('保存失败: '+putRes.status);}
+  }catch(e){
+    toast('错误: '+e.message);
+  }
+}
+
+// ── 简单 Markdown 渲染 ──
+function renderMarkdown(text){
+  let html=text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^### (.+)$/gm,'<h4>$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^# (.+)$/gm,'<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code>$1</code>')
+    .replace(/^\- (.+)$/gm,'<li>$1</li>')
+    .replace(/^\|(.+)\|$/gm,row=>{
+      const cells=row.split('|').filter(c=>c.trim()).map(c=>`<td>${c.trim()}</td>`).join('');
+      return `<tr>${cells}</tr>`;
+    })
+    .replace(/(<tr>.*<\/tr>\n?)+/g,'<table>$&</table>')
+    .replace(/\n\n/g,'</p><p>')
+    .replace(/\n/g,'<br>');
+  return '<p>'+html+'</p>';
+}
+
+function addMsg(role,text){
+  const div=document.createElement('div');
+  div.className='msg '+role;
+  const bubble=document.createElement('div');
+  bubble.className='bubble';
+  bubble.innerHTML=role==='user'?text:renderMarkdown(text);
+  div.appendChild(bubble);
+  document.getElementById('chat').appendChild(div);
+  return div;
+}
+
+function scrollDown(){
+  const chat=document.getElementById('chat');
+  chat.scrollTop=chat.scrollHeight;
+}
+
+// ── 初始化 ──
+loadSettings();
+</script>
+</body>
+</html>
