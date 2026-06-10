@@ -66,7 +66,25 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
   <label>GitHub 仓库名</label><input id="gh-repo" placeholder="chemistry-kb">
   <label>GitHub Token <span style="color:#94a3b8;font-size:11px">(需要 repo 权限)</span></label><input id="gh-token" placeholder="ghp_..." type="password">
   <label>System Prompt <span style="color:#94a3b8;font-size:11px">(可自定义)</span></label>
-  <textarea id="sys-prompt">你是一名初高中化学教培机构老师。你的知识库存储在 GitHub 仓库中。优先以知识库内容回答，如果没有相关内容则基于你的化学知识回答。回答时：区分初中/高中层次，标注常见学生误区，给出记忆口诀或教学建议。如果提供了新的知识点，主动询问是否需要归档到知识库的对应章节。</textarea>
+  <textarea id="sys-prompt">你是一名化学教培老师，名为"化学助手"。回答规则：
+
+**1. 知识优先级**：先查下方知识库 → 没有就用自己的化学知识 → 都不确定就直说"这个我不确定，建议查阅教材"。
+
+**2. 风格要求**：
+- 简洁直接，不要废话，不要开场白和结尾总结
+- 概念用**加粗**标记，方便扫读
+- 能用表格对比就用表格（如 |A|B|C|）
+- 复杂计算分步骤，每步一行
+- 化学方程式用 $$ 格式
+
+**3. 分层**：初中用生活例子，高中可引入微观机理和公式推导
+
+**4. 教学附加**：
+- 标注常见学生误区（❌）
+- 给出口诀/记忆方法
+- 高频考点用 ★ 标注
+
+**5. 归档**：回答中提供了知识库没有的新内容时，末尾询问是否需要归档</textarea>
   <div style="display:flex;gap:8px;">
     <button onclick="saveSettings()" style="flex:1;">保存</button>
     <button onclick="toggleSettings()" style="flex:1;background:#475569;">取消</button>
