@@ -437,28 +437,47 @@ async function commitToGitee(fname, content, gUser, gRepo, gToken){
     let nc=content;
     if(!nc.includes('> **归档时间**')) nc+='\n\n> **归档时间**：'+now+' | 移动端补充';
 
-    // Gitee API: 先获取sha（如果文件存在）
+    // UTF-8 safe base64
+    function toBase64(str){
+      const encoder=new TextEncoder();
+      const bytes=encoder.encode(str);
+      let bin='';
+      bytes.forEach(b=>bin+=String.fromCharCode(b));
+      return btoa(bin);
+    }
+
+    // Gitee API: 获取sha（文件可能不存在）
     let sha=null;
     const getUrl='https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname+'?access_token='+gToken;
-    const getRes=await fetch(getUrl);
-    if(getRes.ok){const d=await getRes.json();sha=d.sha;}
+    try{
+      const getRes=await fetch(getUrl);
+      if(getRes.ok){const d=await getRes.json();sha=d.sha;}
+    }catch(e){}
 
-    // 提交文件
+    // 构建请求体
     const body={
       access_token:gToken,
-      content:btoa(unescape(encodeURIComponent(nc))),
+      content:toBase64(nc),
       message:'移动端补充: '+fname.split('/').pop().replace('.md',''),
       branch:'master'
     };
     if(sha) body.sha=sha;
 
-    const putRes=await fetch('https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname,{
-      method:'POST',
+    // 用 query string 传 access_token（更可靠）
+    const apiUrl='https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname+'?access_token='+gToken;
+    const method=sha?'PUT':'POST';
+
+    const putRes=await fetch(apiUrl,{
+      method:method,
       headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams(body)
+      body:new URLSearchParams(body).toString()
     });
 
-    putRes.ok?toast('已归档到 Gitee!'):toast('保存失败: HTTP '+putRes.status);
+    if(putRes.ok){toast('已归档到 Gitee!');}
+    else{
+      const err=await putRes.text();
+      toast('保存失败: HTTP '+putRes.status+' '+err.substring(0,80));
+    }
   }catch(e){toast('错误: '+e.message);}
 }
 
