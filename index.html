@@ -101,9 +101,12 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
 - 给出口诀/记忆方法
 - 高频考点用 ★ 标注
 
-**5. 归档**：回答中提供了知识库没有的新知识点时，在末尾加上：
-`[建议归档: chemistry/高中化学/选必X/第X章-XXX.md]`
-后面跟一段可直接保存的 Markdown 内容。根据知识点所属学段和章节准确判断路径。初中学段路径用 `chemistry/初中化学/九年级上册/` 或 `九年级下册/`，高中学段用 `chemistry/高中化学/必修一/`、`必修二/`、`选必1-化学反应原理/`、`选必2-物质结构与性质/`、`选必3-有机化学基础/`。</textarea>
+**5. 归档**：你**不能**直接操作文件系统或 Git 仓库。当回答涉及知识库中没有的新知识点时：
+- 回答末尾附上 `[建议归档: chemistry/高中化学/选必X/第X章-XXX.md]` 作为路径标记
+- 标记后面给出可直接保存的 Markdown 内容
+- **不要在回答中说"已归档"、"已保存"、"已更新至知识库"**——这些操作你没能力执行
+- 应说"以下内容建议保存到知识库，请点击保存按钮归档"或类似提示用户操作的话
+- 路径规则：初中用 `chemistry/初中化学/九年级上册/` 或 `九年级下册/`，高中用 `chemistry/高中化学/必修一/`、`必修二/`、`选必1-化学反应原理/`、`选必2-物质结构与性质/`、`选必3-有机化学基础/`</textarea>
   <div style="display:flex;gap:8px;">
     <button onclick="saveSettings()" style="flex:1;">保存</button>
     <button onclick="toggleSettings()" style="flex:1;background:#475569;">取消</button>
