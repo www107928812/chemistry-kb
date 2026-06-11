@@ -446,18 +446,28 @@ async function commitToGitee(fname, content, gUser, gRepo, gToken){
       return btoa(bin);
     }
 
-    // Gitee API: 获取sha（文件可能不存在）
-    let sha=null;
+    // Gitee API: 获取文件现有内容
+    let sha=null, existingContent='';
     const getUrl='https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname+'?access_token='+gToken;
     try{
       const getRes=await fetch(getUrl);
-      if(getRes.ok){const d=await getRes.json();sha=d.sha;}
+      if(getRes.ok){
+        const d=await getRes.json();sha=d.sha;
+        // 解码现有内容
+        if(d.content){
+          try{existingContent=atob(d.content.replace(/\s/g,''));}
+          catch(e2){existingContent='';}
+        }
+      }
     }catch(e){}
 
-    // 构建请求体
+    // 追加而非覆盖
+    const separator='\n\n---\n\n';
+    const finalContent=existingContent?existingContent+separator+nc:nc;
+
     const body={
       access_token:gToken,
-      content:toBase64(nc),
+      content:toBase64(finalContent),
       message:'移动端补充: '+fname.split('/').pop().replace('.md',''),
       branch:'master'
     };
