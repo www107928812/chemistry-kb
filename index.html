@@ -79,9 +79,9 @@ header button{background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-
   <h3 style="margin-bottom:12px;">&#x2699; 设置</h3>
   <label>DeepSeek API Key</label><input id="ds-key" placeholder="sk-...">
   <label>DeepSeek 模型</label><input id="ds-model" value="deepseek-v4-pro" placeholder="deepseek-v4-pro">
-  <label>GitHub 用户名</label><input id="gh-user" placeholder="your-username">
-  <label>GitHub 仓库名</label><input id="gh-repo" placeholder="chemistry-kb">
-  <label>GitHub Token <span style="color:#94a3b8;font-size:11px">(需要 repo 权限)</span></label><input id="gh-token" placeholder="ghp_..." type="password">
+  <label>Gitee 用户名</label><input id="gh-user" value="www107928812">
+  <label>Gitee 仓库名</label><input id="gh-repo" value="chemistry-kb">
+  <label>Gitee Token</label><input id="gh-token" value="14a3b5c8625b149535773c149a779f21" type="password">
   <label>System Prompt <span style="color:#94a3b8;font-size:11px">(可自定义)</span></label>
   <textarea id="sys-prompt">你是一名化学教培老师，名为"化学助手"。回答规则：
 
@@ -181,42 +181,39 @@ function toggleSettings(){
 // ── Toast ──
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
 
-// ── 加载知识库（带本地缓存） ──
+// ── 加载知识库（Gitee优先，带本地缓存） ──
 async function loadKB(){
-  const ghUser=localStorage.getItem('chem_gh-user');
-  const ghRepo=localStorage.getItem('chem_gh-repo');
-  const ghToken=localStorage.getItem('chem_gh-token');
-  if(!ghUser||!ghRepo) return loadFromLocalCache();
+  const gUser=localStorage.getItem('chem_gh-user');
+  const gRepo=localStorage.getItem('chem_gh-repo');
+  const gToken=localStorage.getItem('chem_gh-token');
+  if(!gUser||!gRepo) return loadFromLocalCache();
 
-  // 1. 先尝试从 GitHub 拉取
+  // 1. 先尝试从 Gitee 拉取
   try{
-    const treeUrl=`https://api.github.com/repos/${ghUser}/${ghRepo}/git/trees/main?recursive=1`;
-    const headers=ghToken?{Authorization:`Bearer ${ghToken}`}:{};
-    const res=await fetch(treeUrl,{headers});
+    const treeUrl=`https://gitee.com/api/v5/repos/${gUser}/${gRepo}/git/trees/master?recursive=1&access_token=${gToken}`;
+    const res=await fetch(treeUrl);
     if(res.ok){
       const data=await res.json();
-      const mdFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/'));
+      const mdFiles=data.tree.filter(f=>f.path.endsWith('.md')&&(f.path.startsWith('chemistry/')||f.path==='CLAUDE.md'));
 
       let kbText='';
-      const toFetch=mdFiles.filter(f=>f.path==='CLAUDE.md'||f.path.startsWith('chemistry/'));
-      const maxFetch=Math.min(toFetch.length,12);
-      const fetchBatch=toFetch.slice(0,maxFetch);
+      const maxFetch=Math.min(mdFiles.length,12);
+      const fetchBatch=mdFiles.slice(0,maxFetch);
 
       const contents=await Promise.all(fetchBatch.map(async f=>{
-        const curl=`https://raw.githubusercontent.com/${ghUser}/${ghRepo}/main/${f.path}`;
+        const curl=`https://gitee.com/${gUser}/${gRepo}/raw/master/${f.path}`;
         const r=await fetch(curl);
         return r.ok?r.text():'';
       }));
 
       kbText=contents.join('\n\n');
-      // 保存到本地缓存
       localStorage.setItem('chem_kb_cache',kbText);
       localStorage.setItem('chem_kb_time',Date.now().toString());
-      return {text:kbText, files:mdFiles.map(f=>f.path), source:'GitHub'};
+      return {text:kbText, files:mdFiles.map(f=>f.path), source:'Gitee'};
     }
   }catch(e){}
 
-  // 2. GitHub 不可用，读取本地缓存
+  // 2. Gitee 不可用，读取本地缓存
   return loadFromLocalCache();
 }
 
@@ -315,35 +312,35 @@ async function saveToKB(content){
   const match=content.match(/\[建议归档:\s*([^\]]+)\]/);
   _pickerSelected=match?match[1].trim():null;
 
-  // 拉取文件列表
+  // 本地文件列表（无需网络）
+  const KB_FILES=[
+    'chemistry/初中化学/九年级上册/第一单元-走进化学世界.md','chemistry/初中化学/九年级上册/第二单元-空气和氧气.md','chemistry/初中化学/九年级上册/第三单元-物质构成的奥秘.md','chemistry/初中化学/九年级上册/第四单元-自然界的水.md','chemistry/初中化学/九年级上册/第五单元-化学反应的定量关系.md','chemistry/初中化学/九年级上册/第六单元-碳和碳的氧化物.md','chemistry/初中化学/九年级上册/第七单元-能源的合理利用与开发.md',
+    'chemistry/初中化学/九年级下册/第八单元-金属和金属材料.md','chemistry/初中化学/九年级下册/第九单元-溶液.md','chemistry/初中化学/九年级下册/第十单元-常见的酸碱盐.md','chemistry/初中化学/九年级下册/第十一单元-化学与社会.md',
+    'chemistry/高中化学/必修一/第一章-物质及其变化.md','chemistry/高中化学/必修一/第二章-海水中的重要元素-钠和氯.md','chemistry/高中化学/必修一/第三章-铁-金属材料.md','chemistry/高中化学/必修一/第四章-物质结构-元素周期律.md',
+    'chemistry/高中化学/必修二/第五章-化工生产中的重要非金属元素.md','chemistry/高中化学/必修二/第六章-化学反应与能量.md','chemistry/高中化学/必修二/第七章-有机化合物.md','chemistry/高中化学/必修二/第八章-化学与可持续发展.md',
+    'chemistry/高中化学/选必1-化学反应原理/第一章-化学反应的热效应.md','chemistry/高中化学/选必1-化学反应原理/第二章-化学反应速率与化学平衡.md','chemistry/高中化学/选必1-化学反应原理/第三章-水溶液中的离子反应与平衡.md','chemistry/高中化学/选必1-化学反应原理/第四章-化学反应与电能.md',
+    'chemistry/高中化学/选必2-物质结构与性质/第一章-原子结构与性质.md','chemistry/高中化学/选必2-物质结构与性质/第二章-分子结构与性质.md','chemistry/高中化学/选必2-物质结构与性质/第三章-晶体结构与性质.md',
+    'chemistry/高中化学/选必3-有机化学基础/第一章-有机化合物的结构特点与研究方法.md','chemistry/高中化学/选必3-有机化学基础/第二章-烃.md','chemistry/高中化学/选必3-有机化学基础/第三章-烃的衍生物.md','chemistry/高中化学/选必3-有机化学基础/第四章-生物大分子.md','chemistry/高中化学/选必3-有机化学基础/第五章-合成高分子.md',
+    'chemistry/中考专题/中考高频考点.md','chemistry/中考专题/中考实验探究.md','chemistry/中考专题/中考化学计算.md','chemistry/中考专题/中考真题分类.md',
+    'chemistry/高考专题/高考高频考点.md','chemistry/高考专题/高考实验综合.md','chemistry/高考专题/高考化工流程.md','chemistry/高考专题/高考反应原理综合.md','chemistry/高考专题/高考选考策略.md',
+  ];
+  _pickerFiles=KB_FILES.map(p=>{
+    let cat='';
+    if(p.includes('初中化学')) cat='初中';
+    else if(p.includes('必修')) cat='必修';
+    else if(p.includes('选必1')) cat='选必1';
+    else if(p.includes('选必2')) cat='选必2';
+    else if(p.includes('选必3')) cat='选必3';
+    else if(p.includes('高考')) cat='高考';
+    else if(p.includes('中考')) cat='中考';
+    return {path:p, cat};
+  });
+
   const list=document.getElementById('picker-list');
-  list.innerHTML='<div style="color:#94a3b8;">加载中...</div>';
   document.getElementById('picker-overlay').classList.add('show');
   document.getElementById('picker-search').value='';
   document.getElementById('picker-confirm').disabled=true;
-
-  try{
-    const treeUrl='https://api.github.com/repos/'+ghUser+'/'+ghRepo+'/git/trees/main?recursive=1';
-    const headers=ghToken?{Authorization:'Bearer '+ghToken}:{};
-    const res=await fetch(treeUrl,{headers});
-    if(!res.ok){list.innerHTML='<div>加载失败</div>';return;}
-    const data=await res.json();
-    _pickerFiles=data.tree.filter(f=>f.path.endsWith('.md')&&f.path.startsWith('chemistry/')).map(f=>{
-      let cat='';
-      if(f.path.includes('初中化学')) cat='初中';
-      else if(f.path.includes('必修')) cat='必修';
-      else if(f.path.includes('选必1')) cat='选必1';
-      else if(f.path.includes('选必2')) cat='选必2';
-      else if(f.path.includes('选必3')) cat='选必3';
-      else if(f.path.includes('高考')) cat='高考';
-      else if(f.path.includes('中考')) cat='中考';
-      return {path:f.path, cat};
-    });
-    _pickerFiles.sort((a,b)=>a.path.localeCompare(b.path,'zh'));
-    renderPicker();
-  }catch(e){
-    list.innerHTML='<div>网络错误，重试</div>';
-  }
+  renderPicker();
 }
 
 function renderPicker(filter=''){
@@ -431,34 +428,37 @@ async function confirmPicker(){
   const ghRepo=localStorage.getItem('chem_gh-repo');
   const ghToken=localStorage.getItem('chem_gh-token');
   const archiveContent=_pickerContent.split(/\[建议归档:/)[1]?.replace(/^[^\]]+\]\s*/,'')||_pickerContent;
-  await commitToGitHub(_pickerSelected, archiveContent, ghUser, ghRepo, ghToken);
+  await commitToGitee(_pickerSelected, archiveContent, ghUser, ghRepo, ghToken);
 }
 
-async function commitToGitHub(fname, content, ghUser, ghRepo, ghToken){
+async function commitToGitee(fname, content, gUser, gRepo, gToken){
   try{
-    let sha=null;
-    const getUrl='https://api.github.com/repos/'+ghUser+'/'+ghRepo+'/contents/'+fname;
-    const getRes=await fetch(getUrl,{headers:{Authorization:'Bearer '+ghToken}});
-    if(getRes.ok){const d=await getRes.json();sha=d.sha;}
-
     const now=new Date().toISOString().slice(0,10);
     let nc=content;
     if(!nc.includes('> **归档时间**')) nc+='\n\n> **归档时间**：'+now+' | 移动端补充';
 
+    // Gitee API: 先获取sha（如果文件存在）
+    let sha=null;
+    const getUrl='https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname+'?access_token='+gToken;
+    const getRes=await fetch(getUrl);
+    if(getRes.ok){const d=await getRes.json();sha=d.sha;}
+
+    // 提交文件
     const body={
-      message:'移动端补充: '+fname.split('/').pop().replace('.md',''),
+      access_token:gToken,
       content:btoa(unescape(encodeURIComponent(nc))),
-      branch:'main'
+      message:'移动端补充: '+fname.split('/').pop().replace('.md',''),
+      branch:'master'
     };
     if(sha) body.sha=sha;
 
-    const putRes=await fetch(getUrl,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ghToken},
-      body:JSON.stringify(body)
+    const putRes=await fetch('https://gitee.com/api/v5/repos/'+gUser+'/'+gRepo+'/contents/'+fname,{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(body)
     });
 
-    putRes.ok?toast('已归档!'):toast('失败: '+putRes.status+' '+putRes.statusText);
+    putRes.ok?toast('已归档到 Gitee!'):toast('保存失败: HTTP '+putRes.status);
   }catch(e){toast('错误: '+e.message);}
 }
 
